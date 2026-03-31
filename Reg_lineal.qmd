@@ -1,0 +1,187 @@
+---
+title: "Regresión Lineal - Introducción"
+author: Angelica Zambrano
+format: 
+  pdf:
+    toc: true
+    toc-title: "Tabla de Contenidos"
+    toc-depth: 3
+    lot: true
+    lof: true
+execute: 
+  echo: true
+  warning: false
+  error: false
+  message: false
+crossref: 
+  lot-title: "Indice de tablas"
+  tbl-title: "Tabla"
+  lof-title: "Indice de figuras"
+  fig-title: "Figura"
+knitr: 
+  opts_chunk: 
+    fig.path: "figuras/"
+---
+
+## Lectura de datos
+
+```{r}
+#| label: librerias
+#| echo: false
+pacman::p_load(psych, 
+               inspectdf,
+               janitor,
+               tidyverse, 
+               equatiomatic)
+```
+
+```{r}
+#| label: datos
+datos <- airquality
+```
+
+## Análisis exploratorio de datos
+
+```{r}
+#| label: aed
+summary(datos[1:4])
+```
+
+## Preparación de datos
+
+```{r}
+#| label: preparacion
+datos_sinNA <- datos |> 
+  drop_na()
+```
+
+```{r}
+#| label: fig-grafasoc
+#| fig-cap: "Variables de conjunto de datos airquality"
+pairs.panels(datos_sinNA, main="")
+```
+
+```{r}
+#| label: correl
+cor.test(datos_sinNA$Ozone, datos_sinNA$Temp)
+```
+
+## Regresión Lineal
+
+```{r}
+#| label: modelo
+modelo_ozono <- lm(Ozone ~ Temp, data = datos_sinNA)
+modelo_ozono
+```
+
+```{r}
+#| label: resumenmodelo
+summary(modelo_ozono)
+```
+
+## Cáculo de los coeficientes de Regresión 
+
+```{r}
+#| label: coeficientes
+datos_sinNA<- datos_sinNA |> 
+  mutate(xi_xm=Temp - mean(Temp), yi_ym= Ozone-mean(Ozone), num=xi_xm*yi_ym, xi_xm_2= (xi_xm^2))
+
+beta1<- sum(datos_sinNA$num)/sum(datos_sinNA$xi_xm_2)
+beta0<- mean(datos_sinNA$Ozone)-beta1*mean(datos_sinNA$Temp)
+```
+
+### Ecuación de Regresión 
+
+```{r}
+#| label: ecuacion_regresion
+#equatiomatic::extract_eq(modelo_ozono, use_coefs = TRUE)
+
+```
+
+
+
+$$
+\operatorname{Ozone} = \alpha + \beta_{1}(\operatorname{Temp}) + \epsilon
+$$
+
+$$
+\operatorname{\widehat{Ozone}} = -147.65 + 2.44(\operatorname{Temp})
+$$
+```{r}
+residuales <- modelo_ozono$residuals 
+modelo_ozono |> 
+  pluck("residuals")
+```
+## Prediccón del modelo 
+
+La predicción de los datos observados en base al modelo ajustado mediante el uso de la función `predict`
+
+```{r}
+#| label: prediccion
+datos_sinNA <- datos_sinNA |> 
+  mutate(prediction= predict(modelo_ozono), 
+         residuales=Ozone-prediction)
+```
+
+```{r}
+#| label: fig-predict
+#| fig-cap: "Gráfico comparativo de los valores medidos vrs los valores pronosticados"
+
+ggplot(datos_sinNA, aes(x=prediction, y=Ozone))+
+  geom_point()+
+  geom_abline(color="blue")
+
+
+```
+## Estimación 
+
+Relizamos una estimación con los nuevos valores de Temperatura
+
+```{r}
+#| label: prednueva
+
+datos_oz_nuevos<- data.frame((Temp=c(65,70,74)))
+datos_oz_nv_pred<- predict(modelo_ozono, datos_oz_nuevos)
+datos_oz_nv_pred
+
+```
+
+# Verificación de los supuestos de regresión lineal
+
+### Normalidad
+
+```{r}
+#| label: normalidad
+
+library(nortest)
+
+prue_norm<- lillie.test(modelo_ozono$residuals)
+prue_norm
+```
+Los residuos no son normales 
+
+## Homocedasticidad 
+
+Usamos el Test de Puntajes de Breush-Pagan
+```{r}
+#| label: homocedasticidad
+library(car)
+ncvTest(modelo_ozono)
+
+```
+
+## Independencia de los residuos
+
+```{r}
+#| label: independencia
+
+DW<- durbinWatsonTest(modelo_ozono)
+
+DW
+
+```
+
+
+## Conclusiones
+El modelo logra una buena aproximación, pero no cumple estrictamente con todos los supuestos estadísticos (normalidad de residuos).
+

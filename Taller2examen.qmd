@@ -1,0 +1,253 @@
+---
+title: “Taller_2 Regresión Logística”
+author: “ML1”
+format: 
+  pdf:
+    include-in-header: 
+      - header.tex
+    include-before-body: 
+      - before-body.tex
+    toc: true
+    toc-title: "Tabla de contenidos"
+    toc-depth: 3
+    lot: true
+    lof: true
+execute: 
+  echo: true
+  warning: false
+  error: false
+  message: false
+crossref: 
+  lot-title: "Indice de tablas"
+  tbl-title: "Tabla"
+  lof-title: "Indice de figuras"
+  fig-title: "Figura"
+knitr:
+  opts_chunk: 
+    fig.path: "fig/"
+bibliography: biblio1.bib
+csl: apa.csl
+---
+
+
+## Cargar librerías 
+
+```{r}
+pacman::p_load(tidyverse, tidymodels, janitor, broom, kableExtra, GGally, performance, gtsummary, inspectdf, rio, Epi, sjplot )
+
+```
+### Datos
+
+```{r}
+datos<- read.csv(file = "empleados.csv")
+```
+
+
+# Análisis Exploratorio de datos (EDA)
+
+Vamos a usar la librería **inspectdf**
+
+```{r}
+catalog_var<- inspect_types(datos)
+
+inspect_num(datos)
+valor_cat<- inspect_cat(datos)
+show_plot(inspect_num(datos))
+```
+```{r}
+datos$left_company_num <- ifelse(datos$left_company == "Yes", 1, 0)
+View(datos)
+
+datos_numericos <- select_if(datos, is.numeric)
+
+matriz_cor <- cor(datos_numericos, use = "complete.obs")
+
+
+matriz_cor
+
+```
+
+
+```{r}
+correlaciones<- inspect_cor(datos[,c(4,5,7,8,9,13)])
+correlaciones
+
+```
+
+```{r}
+show_plot(valor_cat)
+```
+
+## Cambio de nievel de referencia para las variables explicativas y categóricas 
+
+```{r}
+class(datos$marital_status)
+datos$marital_status<- as.factor(datos$marital_status)
+levels(datos$marital_status)
+datos$marital_status<- relevel(datos$marital_status, ref = "Single")
+ levels(datos$marital_status)
+
+```
+
+## Regresión Logística 
+
+La variable a predecir  es `left_company` (dejar la compañía)
+
+### Particionamiento 
+
+```{r}
+datos$left_company<- as.factor(datos$left_company)
+datos$left_company <- relevel(datos$left_company, ref = "Yes")
+class(datos$left_company)
+str(datos$left_company)
+
+set.seed(12345)
+
+conf_part<- initial_split(datos, prop = 0.8, strata = left_company)
+datos_train<- training(conf_part)
+datos_test<- testing(conf_part)
+```
+
+
+## Creación de la receta 
+
+```{r}
+receta_reglog<- recipe(left_company~.,data=datos_train) |> 
+   step_dummy(all_nominal_predictors()) 
+
+receta2 <- recipe(left_company ~ weekly_hours + yrs_at_company + yrs_since_promotion + 
+                    performance_rating + department, 
+                  data = datos) |>
+  step_dummy(all_nominal_predictors()) |>
+  prep()
+
+
+```
+
+## Especificación genérica del modelo 
+
+```{r}
+modelo_reg_log<- logistic_reg() |> 
+  set_engine("glm") |> 
+  set_mode("classification")
+```
+
+### Creación de Flujo de Trabajo 
+
+```{r}
+flujo_trabajo<- workflow() |> 
+  add_recipe(receta_reglog) |> 
+  add_model(modelo_reg_log)
+
+flujo_trabajo
+```
+## Ajuste del Modelo 
+
+```{r}
+
+ajuste_reg_log<- fit(flujo_trabajo, data = datos_train)
+ajuste_reg_log
+
+
+```
+## Explorar el modelo 
+
+```{r}
+
+ajuste_reg_log |> 
+  pluck("fit",2,4) |> 
+  summary()
+
+```
+## Evaluación del Modelo 
+
+### Estimación o predicción de la partición de test
+
+```{r}
+pred<- augment(ajuste_reg_log, datos_test)
+pred
+```
+
+
+### Matriz de confusión 
+
+```{r}
+
+conf_mat(pred, truth = left_company, estimate = .pred_class) |> 
+  autoplot(type="heatmap")
+
+```
+
+
+### Métricas
+
+```{r}
+
+metricas_rlog<- pred |> 
+  metrics(truth = left_company, estimate = .pred_class)
+
+metricas_rlog
+
+library(caret)
+rmetrics<- xtabs(data=pred,~.pred_class+left_company)
+
+confusionMatrix(rmetrics)
+```
+### ROC
+
+```{r}
+
+autoplot(roc_curve(pred, left_company, .pred_Yes))
+
+```
+
+### Otra forma de métricas
+
+```{r}
+library(epiR)
+summary(epi.tests(rmetrics))
+
+```
+### Maximización de Youden
+
+```{r}
+library(cutpointr)
+my<- cutpointr(
+  data = pred,
+  x    = .pred_Yes,
+  class=left_company,
+  method=maximize_metric,
+  metric=youden,
+  boot_runs=100
+    )
+ my |> t()
+ my |> plot_metric()
+ 
+plot_roc(my)
+
+```
+
+
+### Curva ROC
+
+```{r}
+library(Epi)
+Epi::ROC(form = left_company ~ weekly_hours + yrs_at_company + 
+         yrs_since_promotion + department + performance_rating,
+         data = datos_test, 
+         plot = "ROC", grid = FALSE, cuts = c(.2, .9))
+
+
+
+
+```
+## CONCLUSIONES
+
+Se va a predecir qué empleados van a dejar la empresa
+
+La exactitud fue de 95.6%,  acertó en la mayoría de los casos. 
+La sensibilidad fue de 87.5%, acertó empleados que realmente si se fueron. 
+La especificidad fue de 97.2%, lo que indica que también reconoció bien a los que se quedaron y no se fueron.
+Kappa es de  0.84 es decir  lo real  y la prediccion si concuerda
+Curva ROC es de 0.99  con un área bajo la curva alta
+Las variables más importantes que influyen en la decisión de renunciar fueron las horas trabajadas, los años en la empresa y las evaluaciones de desempeño

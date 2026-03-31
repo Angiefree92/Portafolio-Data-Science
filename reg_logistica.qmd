@@ -1,0 +1,106 @@
+---
+title: "Regresión Logística"
+crossref: 
+  lof-title: "Lista de Figuras"
+  lot-title: "Lista de Tablas"
+  fig-title: Figura
+  tbl-title: Tabla
+format: 
+  pdf:
+    include-in-header: 
+      - header.tex
+    include-before-body:
+      - before-body.tex  
+    toc: true
+    toc-title: "Tabla de Contenidos"
+    lof: true
+    lot: true
+    documentclass: scrreprt
+    papersize: A4
+---
+
+## Desarrollo
+
+```{r}
+#| label: librerias
+pacman::p_load(tidyverse,
+               tidymodels,
+               janitor,
+               kableExtra,
+               readxl,
+               gtsummary,
+               report)
+```
+
+## Importación de datos
+
+```{r}
+#| label: datos
+datos <- read_excel("enfermedad.xlsx")
+
+datos <- clean_names(datos)
+```
+
+```{r}
+tbl_summary(datos)
+```
+
+## EDA
+
+```{r}
+#| label: resumendatos
+summary(datos)
+```
+
+### Variable a predecir
+
+```{r}
+#| label: tbl-enfermedad
+#| tbl-cap: "Categorías de la variable enfermedad"
+tabla_enfermedad <- tabyl(datos$enfermedad)
+kable(tabla_enfermedad)
+```
+
+### Variables predictoras
+
+```{r}
+tabyl(datos$sexo)
+```
+
+```{r}
+tabyl(datos$habito_de_fumar)
+```
+
+## Regresión logística
+
+```{r}
+#datos$enfermedad <- as.factor(datos$enfermedad)
+
+datos <- datos |> 
+  mutate(enfermedad_cod = if_else(enfermedad == "Enfermo", 1, 0))
+
+reg_logistica <- glm(enfermedad_cod ~ edad + sexo + habito_de_fumar, family = gaussian, data = datos)
+```
+
+```{r}
+reg_logistica
+```
+
+```{r}
+summary(reg_logistica)
+```
+
+En la @tbl-reglogistica, podemos apreciar el resultado del modelo.
+
+```{r}
+#| label: tbl-reglogistica
+#| tbl-cap: "Modelo de Regresión Logística"
+tbl_regression(reg_logistica, exponentiate = TRUE)
+```
+
+```{r}
+report(reg_logistica)
+```
+
+
+## Referencias Bibliográficas

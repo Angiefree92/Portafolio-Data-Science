@@ -1,0 +1,195 @@
+---
+title: | 
+      | Uso de workflowsets
+      | Taller 5 - Módulo 5 DCD
+execute:
+  echo: true
+  warning: false
+format: 
+  pdf:
+    include-in-header:
+      - header_modif.tex
+    include-before-body:
+      - before-body_modif.tex
+    toc: true
+    toc-title: "Tabla de Contenidos"
+    lof: true
+    lot: false
+    number-sections: true
+    fig-pos: 'H'
+    documentclass: scrreprt
+    papersize: A4
+  docx: 
+    toc: true
+    toc-title: "Tabla de Contenidos"
+    prefer-html: true
+crossref: 
+  lof-title: "Listado de Figuras"
+  lot-title: "Listado de Tablas"
+  fig-title: Figura
+  tbl-title: Tabla
+bibliography: referencias.bib
+csl: apa.csl
+nocite: |
+  @*
+knitr: 
+  opts_chunk: 
+    fig.path: "figuras_workflowsets/"
+---
+
+# Desarrollo
+
+```{r}
+#| label: librerias
+pacman::p_load(
+  tidyverse,
+  tidymodels,
+  inspectdf,
+  janitor
+)
+```
+
+## Datos
+
+```{r}
+#| label: datos
+data("Chicago")
+Chicago <- Chicago %>% slice(1:365)
+```
+
+## Receta
+
+```{r}
+#| label: recetabase
+base_recipe <-
+  recipe(ridership ~ ., data = Chicago) %>%
+  # create date features
+  step_date(date) %>%
+  step_holiday(date) %>%
+  # remove date from the list of predictors
+  update_role(date, new_role = "id") %>%
+  # create dummy variables from factor columns
+  step_dummy(all_nominal()) %>%
+  # remove any columns with a single unique value
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors())
+```
+
+```{r}
+filter_rec <-
+  base_recipe %>%
+  step_corr(all_of(stations), threshold = tune())
+```
+
+```{r}
+pca_rec <-
+  base_recipe %>%
+  step_pca(all_of(stations), num_comp = tune()) %>%
+  step_normalize(all_predictors())
+```
+
+
+## Modelos
+
+```{r}
+#| label: modelos
+regularized_spec <-
+  linear_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet")
+
+cart_spec <-
+  decision_tree(cost_complexity = tune(), min_n = tune()) %>%
+  set_engine("rpart") %>%
+  set_mode("regression")
+
+knn_spec <-
+  nearest_neighbor(neighbors = tune(), weight_func = tune()) %>%
+  set_engine("kknn") %>%
+  set_mode("regression")
+```
+
+## Creación de workflowset
+
+```{r}
+chi_models <-
+  workflow_set(
+    preproc = list(
+      simple = base_recipe, filter = filter_rec,
+      pca = pca_rec
+    ),
+    models = list(
+      glmnet = regularized_spec, cart = cart_spec,
+      knn = knn_spec
+    ),
+    cross = TRUE
+  )
+
+chi_models
+```
+
+```{r}
+chi_models <-
+  chi_models %>%
+  anti_join(tibble(wflow_id = c("pca_glmnet", "filter_glmnet")),
+    by = "wflow_id"
+  )
+```
+
+## Creación de objeto de remuestreo
+
+```{r}
+splits <-
+  sliding_period(
+    Chicago,
+    date,
+    "day",
+    lookback = 300, # Each resample has 300 days for modeling
+    assess_stop = 7, # One week for performance assessment
+    step = 7 # Ensure non-overlapping weeks for assessment
+  )
+splits
+```
+
+## Ajuste de hiperparámetros
+
+```{r}
+#set.seed(123)
+# chi_models <-
+#  chi_models %>%
+  # The first argument is a function name from the {{tune}} package
+  # such as `tune_grid()`, `fit_resamples()`, etc.
+#  workflow_map("tune_grid",
+#    resamples = splits, grid = 10,
+#   metrics = metric_set(mae), verbose = TRUE
+#  )
+#save(chi_models, file = "chi_models.RData")
+load(file = "chi_models.RData")
+```
+
+## Rendimiento de modelos
+
+```{r}
+#| label: fig-rendchimodelos
+#| fig-cap: Rendimiento de modelos
+autoplot(chi_models)
+```
+
+```{r}
+#| label: fig-rendchimodelosmejor
+#| fig-cap: Rendimiento de mejores modelos
+
+autoplot(chi_models, select_best = TRUE)
+```
+
+## Resultados
+
+```{r}
+#| label: resultados
+#| fig-cap: Resultados ajuste
+ranking_resultados <- rank_results(chi_models, rank_metric = "mae", select_best = TRUE) %>%
+  select(rank, mean, model, wflow_id, .config)
+
+ranking_resultados
+```
+
+## Referencias Bibliográficas

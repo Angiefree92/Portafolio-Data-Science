@@ -1,0 +1,164 @@
+---
+title: "Clustering"
+format: 
+  pdf:
+    toc: true
+    toc-title: "Tabla de Contenidos"
+---
+
+```{r}
+#| label: librerias
+pacman::p_load(factoextra, 
+               cluster,
+               hopkins,
+               NbClust)
+```
+
+# Clustering
+
+## Preparación de datos
+
+```{r}
+#| label: datos
+data("USArrests")
+my_data <- USArrests |> 
+  na.omit() |>          # Remove missing values (NA)
+  scale()                # Scale variables
+```
+
+## Medidas de distancia
+
+```{r}
+#| label: distancias
+res.dist <- get_dist(USArrests, stand = TRUE, method = "pearson")
+```
+
+```{r}
+#| label: fig-grafdist
+#| fig-cap: Gráfico de distancias (Pearson)
+fviz_dist(res.dist, 
+   gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+## Determinación de número óptimo de clusters
+
+```{r}
+#| label: fig-clusopt
+#| fig-cap: Número óptimo de clusters
+fviz_nbclust(my_data, kmeans, method = "gap_stat")
+```
+
+## Aplicación del método k-means
+
+```{r}
+set.seed(123)
+km.res <- kmeans(my_data, 2, nstart = 25)
+```
+
+### Visualización
+
+```{r}
+#| label: fig-clusters
+#| fig-cap: Clusters
+fviz_cluster(km.res, data = my_data,
+             ellipse.type = "convex",
+             palette = "jco",
+             ggtheme = theme_minimal())
+```
+
+## Aplicación del método PAM
+
+```{r}
+pam.res <- pam(my_data, 2)
+```
+
+### Visualización
+
+```{r}
+#| label: fig-clustersPAM
+#| fig-cap: Clusters (método PAM)
+fviz_cluster(pam.res)
+```
+
+## Clustering jerárquico
+
+```{r}
+res.hc <- USArrests |> 
+  scale() |>                     # Scale the data
+  dist(method = "euclidean")  |>  # Compute dissimilarity matrix
+  hclust(method = "ward.D2")     # Compute hierachical clustering
+```
+
+### Visualización
+
+```{r}
+#| label: fig-dendog
+#| fig-cap: Dendograma
+fviz_dend(res.hc, k = 3, # Cut in 3 groups
+          cex = 0.5, # label size
+          k_colors = c("#2E9FDF", "#00AFBB", "#E7B800"),
+          color_labels_by_k = TRUE, # color labels by groups
+          rect = TRUE # Add rectangle around groups
+          )
+```
+
+### Evaluación de tendencia de agrupamiento
+
+#### Método visual
+
+```{r}
+#| label: fig-ODI
+#| fig-cap: Imagen de disimilaridades
+gradient.color <- list(low = "steelblue",  high = "white")
+
+USArrests |> 
+  scale() |> 
+  get_clust_tendency(n = 49, gradient = gradient.color)
+```
+
+#### Estadístico de Hopkins
+
+```{r}
+set.seed(1)
+hopkins_datos <- hopkins(USArrests, m = 49)
+hopkins_datos
+```
+
+```{r}
+hopkins.pval(hopkins_datos, n = 49)
+```
+
+### Alternativa para la obtención de número óptimo de clusters
+
+```{r}
+res.nbclust <- USArrests |> 
+  scale() |> 
+  NbClust(distance = "euclidean",
+          min.nc = 2, max.nc = 10, 
+          method = "complete", index ="all") 
+```
+
+### Estadísticas de validación de clusters
+
+```{r}
+set.seed(123)
+# Enhanced hierarchical clustering, cut in 3 groups
+res.hc <- USArrests |> 
+  scale() |> 
+  eclust("hclust", k = 2, graph = FALSE)
+
+# Visualize with factoextra
+fviz_dend(res.hc, palette = "jco",
+          rect = TRUE, show_labels = FALSE)
+```
+
+```{r}
+fviz_silhouette(res.hc)
+```
+
+```{r}
+sil <- res.hc$silinfo$widths[, 1:3]
+neg_sil_index <- which(sil[, 'sil_width'] < 0)
+sil[neg_sil_index, , drop = FALSE]
+```
+
